@@ -1,0 +1,82 @@
+name: STINGER APK Derle
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: 'Online sunucu adresi (örn. wss://stinger-sunucu.onrender.com). Boş bırakılırsa depo değişkeni STINGER_SERVER kullanılır.'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      STINGER_SERVER: ${{ github.event.inputs.server_url || vars.STINGER_SERVER }}
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Paketleri kur
+        run: npm install --no-audit --no-fund
+
+      - name: Sunucu adresini oyuna yaz
+        run: node scripts/inject-server.js
+
+      - name: Android projesini oluştur
+        run: |
+          rm -rf android
+          npx cap add android
+
+      - name: Simge, izin ve tam ekran ayarları
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: node scripts/android-setup.js
+
+      - name: Eşitle
+        run: npx cap sync android
+
+      - name: APK derle (debug — doğrudan telefona kurulur)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          mkdir -p ../dist
+          cp app/build/outputs/apk/debug/app-debug.apk ../dist/STINGER.apk
+
+      - name: İmzalı sürüm APK (isteğe bağlı, Google Play için)
+        if: env.HAS_KEYSTORE == 'true'
+        working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > $RUNNER_TEMP/release.jks
+          ./gradlew assembleRelease bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$RUNNER_TEMP/release.jks \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          cp app/build/outputs/apk/release/app-release.apk ../dist/STINGER-release.apk
+          cp app/build/outputs/bundle/release/app-release.aab ../dist/STINGER-release.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STINGER-APK
+          path: dist/
+          retention-days: 30

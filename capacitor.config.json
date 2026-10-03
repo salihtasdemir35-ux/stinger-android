@@ -1,0 +1,12 @@
+{
+  "appId": "com.stinger.interceptor",
+  "appName": "STINGER",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0a110c"
+  },
+  "plugins": {
+    "StatusBar": { "overlaysWebView": true, "style": "DARK", "backgroundColor": "#0a110c" }
+  }
+}
